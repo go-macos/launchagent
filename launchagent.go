@@ -2,15 +2,34 @@
 // Use of this source code is governed by a BSD-3-Clause license that can be
 // found in the LICENSE file.
 
-// Package launchagent is the per-user LaunchAgent that keeps a program running
-// across logouts and restarts.
+// Package launchagent keeps a program running across logouts and restarts.
 //
 // A program a person started in a terminal ends with the terminal, and a
 // program that ends is a queue that stops, a watcher that stops watching, a
-// sync that silently falls behind. launchd is how macOS is told to start
-// something again — and the whole of that instruction is a plist in one
-// directory, so this is path and file work: no cgo, no AppKit, and testable on
-// every platform, which is what lets a cross-compiling build write one.
+// sync that silently falls behind. Something has to tell macOS to start it
+// again, and there are two ways to say so:
+//
+//   - [Install] writes a plist into ~/Library/LaunchAgents, which is path and
+//     file work — no cgo, nothing macOS-only — and works for anything,
+//     including a bare executable in /usr/local/bin and a macOS older than 13.
+//     It is also invisible to the person who owns the machine: the item shows
+//     up in System Settings as a reverse-DNS label with no name and no icon,
+//     and nothing tells the program when they switch it off.
+//
+//   - [Enable] prefers SMAppService when the process is inside an application
+//     bundle, through github.com/go-macos/servicemanagement. That is what Apple
+//     supports since macOS 13, it appears under the application's own name, and
+//     the person can turn it off — which [State] can then report, and which the
+//     plist can never tell you.
+//
+// [Enable], [State] and [Disable] choose between the two and say which one they
+// used. [Install], [Remove], [Installed], [Path] and [Dir] are the plist alone,
+// unchanged: they still mean exactly what they meant, so a caller that wants
+// the file and nothing else still gets it.
+//
+// Everything here is CGO_ENABLED=0 and builds and is tested on every platform;
+// off darwin, servicemanagement reports itself unsupported and the plist is
+// what is left, which is what lets a cross-compiling build write one.
 package launchagent
 
 import (

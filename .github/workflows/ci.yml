@@ -1,0 +1,182 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # A workflow that fails to PARSE reports nothing at all: no jobs run, no
+  # checks appear, and the pull request looks unexercised rather than broken.
+  # This is the only lane that would notice.
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  gofmt:
+    name: gofmt + tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"; echo "$unformatted"
+            exit 1
+          fi
+      - name: go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+  darwin:
+    name: darwin (CGO=0)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: CGO_ENABLED=0 go vet ./...
+      - run: CGO_ENABLED=0 go build ./...
+      - run: CGO_ENABLED=0 go test -count=1 -v ./...
+      - run: CGO_ENABLED=1 go test -race -count=1 ./...
+      - name: Coverage
+        run: CGO_ENABLED=0 go test -count=1 -coverprofile=cover.out .
+      # Nothing here is macOS-only: the mechanism choice is portable code over
+      # seams, and the plist is file work. So the gate is on EVERYTHING, on
+      # this lane as much as on linux — a carve-out would be a number chosen to
+      # pass rather than a standard.
+      - name: 100% coverage gate
+        shell: bash
+        run: |
+          go tool cover -func=cover.out | tee full.txt
+          if grep -v '100\.0%' full.txt | grep -v '^total:'; then
+            echo "::error::below 100% (lines above)"; exit 1
+          fi
+          total=$(tail -1 full.txt | grep -oE '[0-9.]+%')
+          if [ "$total" != "100.0%" ]; then
+            echo "::error::total is $total, not 100.0%"; exit 1
+          fi
+
+  # Every non-darwin platform must COMPILE and answer ErrUnsupported rather
+  # than failing to build: a consumer cross-compiles this without thinking
+  # about it. All six of Go's 64-bit targets, plus every platform the README
+  # makes a claim about.
+  cross:
+    name: cross ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: riscv64 }
+          - { goos: linux, goarch: loong64 }
+          - { goos: linux, goarch: ppc64le }
+          - { goos: linux, goarch: s390x }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: android, goarch: arm64 }
+          - { goos: js, goarch: wasm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+      - run: CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go vet ./...
+
+  # This package is OS-independent by construction — the mechanism choice is
+  # portable code over seams and the plist is file work — so the whole suite is
+  # RUN, not merely compiled, on all six of Go's 64-bit architectures: amd64
+  # natively, the other five under qemu-user.
+  arches:
+    name: run tests on ${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goarch: amd64, qemu: "", qemu_cpu: "" }
+          - { goarch: arm64, qemu: qemu-aarch64-static, qemu_cpu: "" }
+          - { goarch: riscv64, qemu: qemu-riscv64-static, qemu_cpu: "" }
+          - { goarch: loong64, qemu: qemu-loongarch64-static, qemu_cpu: "" }
+          - { goarch: ppc64le, qemu: qemu-ppc64le-static, qemu_cpu: power10 }
+          - { goarch: s390x, qemu: qemu-s390x-static, qemu_cpu: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Install qemu-user
+        if: matrix.qemu != ''
+        run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      - name: Build the test binary
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go test -c -o launchagent.test .
+      # QEMU_CPU must be EXPORTED ONLY when it has a value: qemu-user refuses
+      # to start with "-cpu option cannot be empty" if it is set to the empty
+      # string, which is what `env: QEMU_CPU: ${{ matrix.qemu_cpu }}` does for
+      # the arches that do not need one. Setting a variable empty is not the
+      # same as not setting it.
+      - name: Run it
+        env:
+          QEMU: ${{ matrix.qemu }}
+          QEMU_CPU_WANTED: ${{ matrix.qemu_cpu }}
+        run: |
+          if [ -n "$QEMU_CPU_WANTED" ]; then
+            export QEMU_CPU="$QEMU_CPU_WANTED"
+          fi
+          if [ -z "$QEMU" ]; then
+            ./launchagent.test -test.count=1 -test.v
+          else
+            "$QEMU" ./launchagent.test -test.count=1 -test.v
+          fi
+
+  linux:
+    name: linux (full coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: CGO_ENABLED=0 go test -count=1 ./...
+      - run: CGO_ENABLED=0 go test -count=1 -coverprofile=cover.out .
+      - name: 100% coverage gate
+        shell: bash
+        run: |
+          go tool cover -func=cover.out | tee full.txt
+          if grep -v '100\.0%' full.txt | grep -v '^total:'; then
+            echo "::error::below 100% on linux (lines above)"; exit 1
+          fi
+
+  windows:
+    name: windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test -count=1 ./...
+        env:
+          CGO_ENABLED: 0
