@@ -1,6 +1,6 @@
 module github.com/go-macos/launchagent
 
-go 1.26.4
+go 1.27.1
 
 require github.com/go-macos/servicemanagement v0.1.0
 
