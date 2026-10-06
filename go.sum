@@ -1,6 +1,6 @@
-github.com/ebitengine/purego v0.10.2 h1:W809HbnvzAxgdm+aOvlSekrM16wGCdT/e76+9tS7gzE=
-github.com/ebitengine/purego v0.10.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
-github.com/go-macos/objc v0.4.0 h1:SjL67emvTtDl2C++5HkIoegjFpayAMgd3IQTDYpCLXs=
-github.com/go-macos/objc v0.4.0/go.mod h1:00GJyieLzPcb65rPLVWNPPUCVm79nmmiEXUDsslRpOs=
-github.com/go-macos/servicemanagement v0.1.0 h1:kd1heEVxEzJFAx6yZsWooNyCBYyImwIunC7wJYSFwCM=
-github.com/go-macos/servicemanagement v0.1.0/go.mod h1:WINufCNkzwt+MshUKsbni/k/NtuZnFn2aprnsuG6duw=
+github.com/ebitengine/purego v0.11.0 h1:jhp/D+Nyv7UUW8HAcmcjt2N2rYrYi9m3SL21k0Ua/NI=
+github.com/ebitengine/purego v0.11.0/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-macos/objc v0.10.2 h1:WX8CsDT6SbDrIT2wHAZEQBhGcpKR750llRS4oAfX9ww=
+github.com/go-macos/objc v0.10.2/go.mod h1:68hzSUlhg5bFbg1kO0z4DM6xOk4B/IofuxdlyhHHtt8=
+github.com/go-macos/servicemanagement v0.3.0 h1:pb2eyd8P9LJdjp9xRGlFCU/qJxB5AEHvDJaPts37kyc=
+github.com/go-macos/servicemanagement v0.3.0/go.mod h1:NxUIn8VekKaJTR3H1M+SUekXriwPdQtaHT0V9RTqNbQ=
